@@ -575,4 +575,121 @@ defineIntegerFromGetter("EXT_POSITION_LIGHT_RIGHT_W", function()
 	if LoGetAircraftDrawArgumentValue(201) > 0 then return 1 else return 0 end
 end, 1, "External Aircraft Model", "Right Wing Position Light (green)")
 
+function coerce_nil_to_string(value)
+	if value == nil then
+		return ""
+	else
+		return value
+	end
+end
+
+function processUFCPLine(ufcpLine, lineNum)
+   local txt_win       = ufcpLine["txt_win"..lineNum]
+   local txt_win_fill    = ufcpLine["txt_win"..lineNum.."_fill"]
+   local cur_win      = ufcpLine["cur_win"..lineNum]
+   local txt_winr      = ufcpLine["txt_win"..lineNum.."r"]
+   local cur_winr      = ufcpLine["cur_win"..lineNum.."r"]
+   local UFCPLineLength = 8
+   if txt_win_fill ~= null then
+      local full_txt_win_fill  = txt_win_fill..string.rep(" ",UFCPLineLength - string.len(txt_win_fill))
+      if txt_win ~= null then
+         if cur_win ~= null then
+            processedUFCPLine = string.sub(txt_win,1,string.len(txt_win) - string.len(cur_win))..cur_win..string.sub(full_txt_win_fill,string.len(txt_win) + 1)
+         else
+            processedUFCPLine = txt_win..string.sub(full_txt_win_fill,string.len(txt_win) + 1)
+         end
+       else
+         if cur_winr ~= null then
+            processedUFCPLine = string.sub(full_txt_win_fill,1,UFCPLineLength - string.len(txt_winr))..string.sub(txt_winr,1,string.len(txt_winr) - string.len(cur_winr))..cur_winr
+            else
+            processedUFCPLine = string.sub(full_txt_win_fill,1,UFCPLineLength - string.len(txt_winr))..txt_winr
+         end
+       end
+   elseif txt_win ~= null then
+      processedUFCPLine = txt_win
+   else
+      processedUFCPLine = txt_winr
+   end
+   return processedUFCPLine      
+end
+
+defineString("UFCP_LINE_1",function() return coerce_nil_to_string(processUFCPLine(parse_indication(3), 1)) end,8,"UFCP","UFCP Display Line 1")
+defineString("UFCP_LINE_2",function() return coerce_nil_to_string(processUFCPLine(parse_indication(4), 2)) end,8,"UFCP","UFCP Display Line 2")
+defineString("UFCP_LINE_3",function() return coerce_nil_to_string(processUFCPLine(parse_indication(5), 3)) end,8,"UFCP","UFCP Display Line 3")
+defineString("UFCP_LINE_4",function() return coerce_nil_to_string(processUFCPLine(parse_indication(6), 4)) end,8,"UFCP","UFCP Display Line 4")
+
+local radio_line_1
+local radio_line_2
+local radio_sql_light
+local radio_to_light
+local radio_go_light
+
+function radio_parse_indication(indicator_id)  -- Thanks to [FSF]Ian code
+	local ret = {}
+	local li = list_indication(indicator_id)
+	if li == "" then return nil end
+	local m = li:gmatch("-----------------------------------------\n([^\n]+)\n([^\n]*)\n")
+	while true do
+		local name, value = m()
+		if not name then break end
+			-- there's # characters in one of the radio indicator names which break parsing if it isn't replaced
+			ret[name:gsub("\#","hash")] = value
+		end
+	return ret
+end
+
+moduleBeingDefined.exportHooks[#moduleBeingDefined.exportHooks+1] = function()
+	local radioDisplay = radio_parse_indication(7)
+	radio_line_1 = "        "
+	radio_line_2 = "        "
+	radio_sql_light = 0
+	radio_to_light = 0
+	radio_go_light= 0
+	if not radioDisplay then
+		return
+	end
+	if radioDisplay.radio_sql then
+		radio_sql_light = 1;
+	end
+	if radioDisplay.radio_take then
+		radio_to_light = 1;
+	end 
+	if radioDisplay.radio_go then
+		radio_go_light = 1;
+	end
+	
+	-- Radio Display Line 2 uses unprintable characters to display the power symbol - replace these with something printable
+	if radioDisplay.radio_disp_l2 then
+		local charReplacements = {
+			[string.char(29)] = "_",
+			[string.char(30)] = "-",
+			[string.char(31)] = "^"
+		}
+		radio_line_2 = radioDisplay.radio_disp_l2:gsub(".",charReplacements)	
+	end
+	
+	-- original name for field is "#3#"" but this is modified in radio_parse_indication to "hash3hash"
+	if radioDisplay.hash3hash then
+		local tempString
+		if radioDisplay.radio_cursor and radioDisplay.radio_cursor:len() > 0 then
+			if radioDisplay.radio_disp_l1 and radioDisplay.radio_disp_l1:len() > 1 then
+			   tempString = radioDisplay.radio_disp_l1:sub(1,radioDisplay.radio_disp_l1:len() - 1)..radioDisplay.radio_cursor
+			else
+			   tempString = radioDisplay.radio_cursor
+			end 
+		else
+			tempString = radioDisplay.radio_disp_l1
+		end
+		radio_line_1 = radioDisplay.hash3hash:sub(1,radioDisplay.hash3hash:len() - tempString:len())..tempString
+	else
+		radio_line_1 = radioDisplay.radio_disp_l1
+	end
+end
+
+defineIntegerFromGetter("RADIO_SQL_LIGHT", function() return radio_sql_light end, 1, "Radio", "Radio Squelch Indicator Light")
+defineIntegerFromGetter("RADIO_TO_LIGHT", function() return radio_to_light end, 1, "Radio", "Radio Take-Over Indicator Light")
+defineIntegerFromGetter("RADIO_GO_LIGHT", function() return radio_go_light end, 1, "Radio", "Radio Go Indicator Light")
+defineString("RADIO_LINE_1", function() return coerce_nil_to_string(radio_line_1) end,8,"Radio","Radio Display Line 1")
+defineString("RADIO_LINE_2", function() return coerce_nil_to_string(radio_line_2) end,8,"Radio","Radio Display Line 2")
+
 BIOS.protocol.endModule()
